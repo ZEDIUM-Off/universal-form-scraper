@@ -2,8 +2,11 @@
   "name": "universal-form-scraper",
   "version": "1.0.0",
   "description": "scrap any form from url, provide a json object that represent the form.",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
+    "prepublish": "npm run build",
+    "build": "tsc",
     "test": "test"
   },
   "repository": {
@@ -20,5 +23,8 @@
   "bugs": {
     "url": "https://github.com/ZEDIUM-Off/universal-form-scraper/issues"
   },
-  "homepage": "https://github.com/ZEDIUM-Off/universal-form-scraper#readme"
+  "homepage": "https://github.com/ZEDIUM-Off/universal-form-scraper#readme",
+  "devDependencies": {
+    "typescript": "^5.5.2"
+  }
 }
