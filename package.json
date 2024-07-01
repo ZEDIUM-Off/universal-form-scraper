@@ -1,0 +1,24 @@
+{
+  "name": "universal-form-scraper",
+  "version": "1.0.0",
+  "description": "scrap any form from url, provide a json object that represent the form.",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZEDIUM-Off/universal-form-scraper.git"
+  },
+  "keywords": [
+    "universal",
+    "form",
+    "scraper"
+  ],
+  "author": "zedium",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ZEDIUM-Off/universal-form-scraper/issues"
+  },
+  "homepage": "https://github.com/ZEDIUM-Off/universal-form-scraper#readme"
+}
