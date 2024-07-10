@@ -2,9 +2,13 @@ import { FormFetcher } from "./tools";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { FormData, FieldStateDescriptor, FormModel, DataMap, FieldDataMap } from "./types";
-import { formScrapingPrompt, formSchema, formMappingPrompt, createFormMappingSchema, dataMappingPrompt, dataMappingSchema } from "./const";
+import { formScrapingPrompt, formSchema, formMappingPrompt, dataMappingPrompt, dataMappingSchema, formatInstructions } from "./const";
 import { v4 as uuidv4 } from "uuid";
-
+import { tool } from "@langchain/core/tools";
+import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { JsonOutputFunctionsParser } from "@langchain/core/output_parsers/openai_functions";
+import { InputValues } from "@langchain/core/utils/types";
+import { createStructuredOutputChainFromZod } from "langchain/chains/openai_functions";
 
 export class FormScraperAgent {
 	private _formFetcher: FormFetcher;
@@ -14,6 +18,7 @@ export class FormScraperAgent {
 	private _model: BaseChatModel;
 	private _formModel: FormModel | null;
 	private _formMapping: any;
+	private _parser: JsonOutputParser<Record<string, any>>;
 
 	constructor(model: BaseChatModel) {
 		this._model = model;
@@ -22,6 +27,7 @@ export class FormScraperAgent {
 		this._scrapingPrompt = formScrapingPrompt;
 		this._mappingPrompt = formMappingPrompt;
 		this._formModel = null;
+		this._parser = new JsonOutputParser()
 	}
 
 	addVariations(formModel: FormModel, variations: FieldStateDescriptor[]) {
@@ -57,13 +63,15 @@ export class FormScraperAgent {
 	async generateFormModel(url: string) {
 		const formData = await this.fetchFormData(url);
 		console.log("extracting model...");
-		const executable = this._scrapingPrompt.pipe(this._model.withStructuredOutput(formSchema, {name: "formModel"}));
-		const result = await executable.invoke({rawForm: JSON.stringify(formData.rawForm), fieldList: JSON.stringify(formData.fieldList)});
-		const model: FormModel = {
+		const prompt = this._scrapingPrompt;
+		const chain = prompt.pipe(this._model).pipe(this._parser);
+		const result = await chain.invoke({rawForm: JSON.stringify(formData.rawForm), fieldList: JSON.stringify(formData.fieldList)});
+		console.log(result);
+		const model = {
 			id: uuidv4(),
 			url: url,
 			...result
-		}
+		} as FormModel;
 		this._formModel = this.addVariations(model, formData.variations);
 		console.log("model extracted!");
 		return this._formModel;
@@ -79,8 +87,7 @@ export class FormScraperAgent {
 				.map((field: any) => [field.name!, ""])
 		);
 		console.log(lightModel);
-		const formMappingSchema = createFormMappingSchema(lightModel as Record<string, string>);
-		const executable = this._mappingPrompt.pipe(this._model.withStructuredOutput(formMappingSchema, {name: "formMapping"}));
+		const executable = this._mappingPrompt.pipe(this._model).pipe(this._parser);
 		console.log("mapping form model to data...");
 		const result = await executable.invoke({rawForm: JSON.stringify(this._formData.rawForm), dataset: JSON.stringify(dataset), formModelFields: JSON.stringify(lightModel)});
 		console.log("form model mapped!");
@@ -99,11 +106,11 @@ export class FormScraperAgent {
 		this._formModel.fields.forEach(field => {
 			const fieldDataMap: FieldDataMap = {
 				formName: field.name ?? null,
-				dataName: this._formMapping[field.name ?? ''] ?? null,
+				dataName: this._formMapping.mappedFields.find((mapping: any) => mapping.model_field_name === field.name)?.data_field_name ?? null,
 				values: []
 			};
 	
-			if (field.type === 'select' && field.options && field.options.length > 0) {
+			if (field.balise === 'select' && field.options && field.options.length > 0) {
 				// Pour les champs select, on ajoute toutes les options
 				field.options.forEach(option => {
 					if (option.value !== null && option.value !== undefined) {
@@ -140,7 +147,7 @@ export class FormScraperAgent {
 		console.log("mapping data to predetermined fields...");
 		const filterDataSet = await this.filterDataSet(dataset, predeterminedFields);
 		console.log("Filtered dataset:", JSON.stringify(filterDataSet, null, 2));
-		const executable = dataMappingPrompt.pipe(this._model.withStructuredOutput(dataMappingSchema, {name: "dataMapping"}));
+		const executable = dataMappingPrompt.pipe(this._model).pipe(this._parser);
 		const result = await executable.invoke({dataset: JSON.stringify(filterDataSet), predeterminedFields: JSON.stringify(predeterminedFields)});
 		console.log("data mapped!");
 		console.log(result);

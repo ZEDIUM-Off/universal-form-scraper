@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { FormModel } from "./types";
 
@@ -40,16 +41,14 @@ export const formSchema = z.object({
 	fields: z.array(formFieldSchema).describe("Les champs du formulaire"),
 });
 
-export const createFormMappingSchema = (lightModel: Record<string, string>) => {
-  return z.object(
-    Object.fromEntries(
-      Object.keys(lightModel).map(fieldName => [
-        fieldName,
-        z.union([z.string(), z.null()])
-      ])
-    )
-  ).describe("Mapping des champs du modèle aux champs du dataset");
-};
+export const formMappingSchema = z.object({
+  mappedFields: z.array(
+    z.object({
+      model_field_name: z.string().describe("field name in fieldList"),
+      data_field_name: z.string().describe("field name in dataset")
+    })
+  ).describe("mapped fields list")
+});
 
 export const mapValueSchema = z.object({
   rawValue: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional().describe("La valeur originale du champ(ne pas changer)"),
@@ -66,22 +65,37 @@ export const dataMappingSchema = z.object({
   mappedFields: z.array(fieldDataMapSchema).describe("Les champs mappés du dataset"),
 });
 
+export const formatInstructions = (schema: any) => `Respond only in valid JSON. Do not use ellipses (...) to omit any information. The JSON object you return should match the following schema:\n${JSON.stringify(zodToJsonSchema(schema))}`
+
 export const formScrapingPrompt = ChatPromptTemplate.fromMessages([
 	[
     "system", "You are an expert extraction algorithm.\
-		With the given HTML code, create a model that describe the form.\
+		With the given HTML code, create a comprehensive model that describes the form.\
 		rawForm: the HTML code of the form\
-    fieldList: the list of fields to extract from the form\
-    For each field from the fieldList in the form, return the name, type, required, visible, value, options of the field.\
-		Return a JSON object that describe the form.",
+		fieldList: the list of fields to extract from the form\
+    For each field in the form, return the following details:\
+		- name: The name of the field\
+		- balise: The HTML tag of the field (e.g., input, select, textarea, etc.)\
+		- type: The type of the field (e.g., text, number, email, etc.)\
+		- required: Whether the field is required (true/false)\
+		- visible: Whether the field is visible (true/false)\
+		- value: The current value of the field, if available\
+		- options: For fields like select or radio, provide all available options\
+		Ensure that all fields and their informations are included in the output. DO NOT use ellipses (...) to omit any information. If a value is not available, use null or an empty string.\n\
+    Respond only in valid JSON. CALL TOOL !",
+    // {format_instructions}
   ],
 	["human", "rawForm: {rawForm}\nfieldList: {fieldList}"]
-]);
+])
+// .partial({
+//   format_instructions: formatInstructions(formSchema),
+// });
 
 export const formMappingPrompt = ChatPromptTemplate.fromMessages([
   [
     "system","You are an expert mapping algorithm.\n\
-    With the given dataset and form model, map the dataset to the form model.\n\
+    (field mapping)\
+    With the given dataset and form model, map form model fields to dataset fields.\n\
     rawForm: the HTML code of the form\n\
     dataset: the dataset to be mapped\n\
     formModelFields: the form model fields\n\
@@ -99,7 +113,7 @@ export const dataMappingPrompt = ChatPromptTemplate.fromMessages([
   [
     "system",
     `Vous êtes un expert en mapping de données. Votre tâche est de faire correspondre les valeurs d'un dataset avec des champs prédéterminés.
-
+    (data mapping)
 Instructions :
 1. Utilisez le 'dataset' fourni et les 'predeterminedFields' pour trouver les correspondances.
 2. Dans 'predeterminedFields', chaque champ a un 'formName' (nom dans le formulaire) et un 'dataName' (nom dans le dataset).
@@ -138,3 +152,31 @@ Assurez-vous de faire correspondre les valeurs aussi précisément que possible,
   ],
   ["human", "dataset: {dataset}\npredeterminedFields: {predeterminedFields}"]
 ]);
+
+
+export const formatToFormModel = {
+  type: "function",
+  function : {
+  name: "format_to_form_model",
+  description: "Should always be used to properly format output if its a form model descrition",
+  parameters:  zodToJsonSchema(formSchema),
+  }
+}
+
+export const formatFieldMapping = {
+  type: "function",
+  function : {
+  name: "format_field_mapping",
+  description: "Should always be used to properly format output if its a field mapping",
+  parameters: zodToJsonSchema(formMappingSchema),
+  }
+}
+
+export const formatDataMapping = {
+  type: "function",
+  function : {
+    name: "format_data_mapping",
+    description: "Should always be used to properly format output if its a data mapping",
+    parameters: zodToJsonSchema(dataMappingSchema),
+  }
+}
